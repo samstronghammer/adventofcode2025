@@ -1,2 +1,2 @@
 ﻿// See https://aka.ms/new-console-template for more information
-Day02.Run();
+Day03.Run();
