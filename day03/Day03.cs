@@ -2,7 +2,7 @@ class Day03
 {
     public static void Run()
     {
-        var input = Util.fileToArray("day03/in.txt");
+        var input = Util.FileToArray("day03/in.txt");
         var joltageList = input.ConvertAll((line) => CalcJoltage(line, 2));
         var joltageList2 = input.ConvertAll((line) => CalcJoltage(line, 12));
         Console.WriteLine($"Part 1: {joltageList.Sum()}");

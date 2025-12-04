@@ -2,7 +2,7 @@ class Day01
 {
     public static void Run()
     {
-        var input = Util.fileToArray("day01/in.txt");
+        var input = Util.FileToArray("day01/in.txt");
         var currValue1 = 50;
         var currValue2 = 50;
         var zeroCount1 = 0;

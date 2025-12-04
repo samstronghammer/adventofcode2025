@@ -2,7 +2,7 @@ class Day02
 {
     public static void Run()
     {
-        var input = Util.fileToArray("day02/in.txt");
+        var input = Util.FileToArray("day02/in.txt");
         long maxNum = 0;
         var rangeStrings = input[0].Split(',');
         var ranges = rangeStrings
