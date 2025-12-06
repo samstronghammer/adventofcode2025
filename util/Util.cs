@@ -26,6 +26,36 @@ class Util
     }
 }
 
+readonly struct InclusiveRange(long start, long end)
+{
+    public long Start { get; } = start;
+    public long End { get; } = end;
+
+    public bool Contains(long num)
+    {
+        return num >= Start && num <= End;
+    }
+
+    public bool CanMerge(InclusiveRange other)
+    {
+        return Contains(other.Start)
+            || Contains(other.End)
+            || other.End == Start - 1
+            || other.Start == End + 1
+            || other.Contains(Start);
+    }
+
+    public InclusiveRange Merge(InclusiveRange other)
+    {
+        return new InclusiveRange(long.Min(Start, other.Start), long.Max(End, other.End));
+    }
+
+    public long Size()
+    {
+        return End - Start + 1;
+    }
+}
+
 readonly struct Loc(int row, int col)
 {
     public static readonly Loc UP = new(-1, 0);

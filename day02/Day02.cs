@@ -13,7 +13,7 @@ class Day02
                     var toks = s.Split('-');
                     var rangeEnd = long.Parse(toks[1]);
                     maxNum = long.Max(maxNum, rangeEnd);
-                    return new IdRange(long.Parse(toks[0]), rangeEnd);
+                    return new InclusiveRange(long.Parse(toks[0]), rangeEnd);
                 }
             );
         long currNum = 1;
@@ -29,11 +29,7 @@ class Day02
                 );
                 if (invalidIdGuess > maxNum)
                     break;
-                if (
-                    ranges.Any(
-                        (range) => invalidIdGuess >= range.Start && invalidIdGuess <= range.End
-                    )
-                )
+                if (ranges.Any((range) => range.Contains(invalidIdGuess)))
                 {
                     if (repetitions == 2)
                         invalidIds1.Add(invalidIdGuess);
@@ -48,10 +44,4 @@ class Day02
         Console.WriteLine($"Part 1: {invalidIds1.Sum()}");
         Console.WriteLine($"Part 2: {invalidIds2.Sum()}");
     }
-}
-
-readonly struct IdRange(long start, long end)
-{
-    public long Start { get; } = start;
-    public long End { get; } = end;
 }
