@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 class Util
 {
     public static List<string> FileToArray(string file)
@@ -28,6 +30,11 @@ class Util
             }
         }
         return locations;
+    }
+
+    public static long LongSquare(long l)
+    {
+        return l * l;
     }
 }
 
@@ -124,5 +131,34 @@ readonly struct Loc(int row, int col)
     public static Loc operator *(Loc l, int scalar)
     {
         return new Loc(l.Row * scalar, l.Col * scalar);
+    }
+}
+
+readonly struct Point3D(long x, long y, long z)
+{
+    public long X { get; } = x;
+    public long Y { get; } = y;
+    public long Z { get; } = z;
+
+    public bool Equals(Point3D other)
+    {
+        return X == other.X && Y == other.Y && Z == other.Z;
+    }
+
+    public override string ToString()
+    {
+        return $"Point3D({X},{Y},{Z})";
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(X, Y, Z);
+    }
+
+    public long DistSquared(Point3D other)
+    {
+        return Util.LongSquare(X - other.X)
+            + Util.LongSquare(Y - other.Y)
+            + Util.LongSquare(Z - other.Z);
     }
 }
