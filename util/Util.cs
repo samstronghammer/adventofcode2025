@@ -57,6 +57,11 @@ readonly struct InclusiveRange(long start, long end)
             || other.Contains(Start);
     }
 
+    public bool Intersects(InclusiveRange other)
+    {
+        return Contains(other.Start) || Contains(other.End) || other.Contains(Start);
+    }
+
     public InclusiveRange Merge(InclusiveRange other)
     {
         return new InclusiveRange(long.Min(Start, other.Start), long.Max(End, other.End));
@@ -160,5 +165,51 @@ readonly struct Point3D(long x, long y, long z)
         return Util.LongSquare(X - other.X)
             + Util.LongSquare(Y - other.Y)
             + Util.LongSquare(Z - other.Z);
+    }
+}
+
+readonly struct Point2D(long x, long y)
+{
+    public long X { get; } = x;
+    public long Y { get; } = y;
+
+    public bool Equals(Point3D other)
+    {
+        return X == other.X && Y == other.Y;
+    }
+
+    public override string ToString()
+    {
+        return $"Point2D({X},{Y})";
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(X, Y);
+    }
+
+    public long DistSquared(Point2D other)
+    {
+        return Util.LongSquare(X - other.X) + Util.LongSquare(Y - other.Y);
+    }
+
+    public static Point2D operator +(Point2D l1, Point2D l2)
+    {
+        return new Point2D(l1.X + l2.X, l1.Y + l2.Y);
+    }
+
+    public static Point2D operator -(Point2D l)
+    {
+        return new Point2D(-l.X, -l.Y);
+    }
+
+    public static Point2D operator -(Point2D l1, Point2D l2)
+    {
+        return l1 + -l2;
+    }
+
+    public static Point2D operator *(Point2D l, long scalar)
+    {
+        return new Point2D(l.X * scalar, l.Y * scalar);
     }
 }
