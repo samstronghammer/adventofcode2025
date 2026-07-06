@@ -1,3 +1,5 @@
+using MathNet.Numerics.LinearAlgebra;
+
 class Day10
 {
     public static void Run()
@@ -6,8 +8,221 @@ class Day10
         List<WiringSchematic> schematics = input.ConvertAll(StringToSchematic);
 
         Console.WriteLine($"Part 1: {schematics.ConvertAll(NumPressesNeeded).Sum()}");
-        Console.WriteLine($"Part 2 test: {NumPressesNeededP2(schematics[0])}");
-        // Console.WriteLine($"Part 2: {schematics.ConvertAll(NumPressesNeededP2).Sum()}");
+        Console.WriteLine($"Part 2: {schematics.ConvertAll(NumPressesNeededP2Fast).Sum()}");
+    }
+
+    /**
+     * This solution is based off of a divide and conquer algorithm that was not my initial intuiton. Runs in about 17 seconds.
+     */
+    private static double NumPressesNeededP2Fast(WiringSchematic schematic)
+    {
+        var buttonMatrix = Matrix<double>.Build.Dense(
+            schematic.Buttons.Count,
+            schematic.Buttons[0].Count,
+            (i, j) => schematic.Buttons[i][j]
+        );
+        // Map from curr location mod 2 to (cost, vec to add)
+        Dictionary<Vector<double>, List<(double, Vector<double>)>> optionsMemo = [];
+        var result = P2FastHelper(buttonMatrix, schematic.JoltagesGoal, optionsMemo);
+        // Console.WriteLine($"goal: {string.Join(',', schematic.JoltagesGoal)}, result: {result}, optionsSize: {optionsMemo.Count}, goalMemoSize: {goalMemo.Count}");
+        return result;
+    }
+
+    private static List<(double, Vector<double>)> GetOptions(
+        Matrix<double> buttonMatrix,
+        Vector<double> goal,
+        Dictionary<Vector<double>, List<(double, Vector<double>)>> optionsMemo
+    )
+    {
+        var mod2Goal = goal.Modulus(2);
+        optionsMemo.TryGetValue(mod2Goal, out var result);
+        if (result != null)
+            return result;
+
+        Vector<double> emptyButtonPresses = CreateVector.Dense<double>(buttonMatrix.RowCount);
+        List<Vector<double>> buttonPushOptions = [emptyButtonPresses];
+        for (var i = 0; i < buttonMatrix.RowCount; i++)
+        {
+            var oldOptions = buttonPushOptions.ConvertAll(option => option.Clone());
+            oldOptions.ForEach(option =>
+            {
+                option[i] = 1;
+                buttonPushOptions.Add(option);
+            });
+        }
+        var successes = buttonPushOptions
+            .FindAll(
+                (option) =>
+                {
+                    var result = option.ToRowMatrix().Multiply(buttonMatrix).Row(0).Modulus(2);
+                    return mod2Goal.Equals(result);
+                }
+            )
+            .ConvertAll(pushOption =>
+            {
+                return (
+                    pushOption.SumMagnitudes(),
+                    pushOption.ToRowMatrix().Multiply(buttonMatrix).Row(0)
+                );
+            });
+        optionsMemo.Add(mod2Goal, successes);
+        return successes;
+    }
+
+    private static double P2FastHelper(
+        Matrix<double> buttonMatrix,
+        Vector<double> goal,
+        Dictionary<Vector<double>, List<(double, Vector<double>)>> optionsMemo
+    )
+    {
+        if (goal.SumMagnitudes() == 0)
+            return 0;
+        var successes = GetOptions(buttonMatrix, goal, optionsMemo);
+        var bestPresses = double.PositiveInfinity;
+        successes.ForEach(pair =>
+        {
+            var result = pair.Item2;
+            var remaining = goal.Subtract(result).Divide(2);
+            if (remaining.Any(d => d < 0))
+                return;
+            var totalPresses = pair.Item1 + 2 * P2FastHelper(buttonMatrix, remaining, optionsMemo);
+            if (totalPresses < bestPresses)
+                bestPresses = totalPresses;
+        });
+        return bestPresses;
+    }
+
+    /**
+     * This was my original solution. It takes about a day to run (single-threaded). It does constraint solving with
+     * every pruning method that came to mind. The smaller cases finish quickly, but about 15 take many minutes to hours
+     * to run.
+     */
+    private static double NumPressesNeededP2Slow(WiringSchematic schematic)
+    {
+        var buttonMatrix = Matrix<double>.Build.Dense(
+            schematic.Buttons.Count,
+            schematic.Buttons[0].Count,
+            (i, j) => schematic.Buttons[i][j]
+        );
+        // 0 means no constraint, 1 means max, 2 means equal
+        var constraintMatrix = Matrix<double>.Build.Dense(
+            schematic.Buttons.Count,
+            schematic.Buttons[0].Count,
+            (i, j) =>
+            {
+                var prev = buttonMatrix.At(i, j);
+                if (prev == 0)
+                    return 0;
+                // Calculate all numbers below me
+                var belowMeMatrix = buttonMatrix.SubMatrix(
+                    i + 1,
+                    buttonMatrix.RowCount - i - 1,
+                    j,
+                    1
+                );
+                if (belowMeMatrix.RowSums().Sum() == 0)
+                {
+                    return 2;
+                }
+                return 1;
+            }
+        );
+
+        var calculatedPresses = MinP2SlowHelper(
+            0,
+            schematic.Joltages,
+            buttonMatrix,
+            constraintMatrix,
+            schematic.JoltagesGoal,
+            Math.Ceiling(
+                schematic.JoltagesGoal.SumMagnitudes() / schematic.Buttons.Last().SumMagnitudes()
+            )
+        );
+        if (calculatedPresses == null)
+        {
+            throw new Exception("Failed to find solution");
+        }
+        return calculatedPresses.Sum();
+    }
+
+    private static Vector<double>? MinP2SlowHelper(
+        int index,
+        Vector<double> currVector,
+        Matrix<double> buttonMatrix,
+        Matrix<double> constraintMatrix,
+        Vector<double> goal,
+        double upperbound
+    )
+    {
+        if (upperbound < 0)
+        {
+            return null;
+        }
+
+        Vector<double> pressMeVector = CreateVector.Dense<double>(buttonMatrix.RowCount);
+
+        if (index >= buttonMatrix.RowCount)
+        {
+            return currVector.Equals(goal) ? pressMeVector : null;
+        }
+        var button = buttonMatrix.Row(index);
+        var constraints = constraintMatrix.Row(index);
+        var remaining = goal - currVector;
+        var remainingMagnitude = remaining.SumMagnitudes();
+        var buttonMagnitude = button.SumMagnitudes();
+        var minPressesRequired = remainingMagnitude / buttonMagnitude;
+        if (minPressesRequired > upperbound)
+        {
+            return null;
+        }
+        double? equals = null;
+        double max = upperbound;
+        for (var i = 0; i < constraints.Count; i++)
+        {
+            var constraint = constraints[i];
+            if (constraint == 0)
+                continue;
+            if (constraint == 1)
+                max = double.Min(max, remaining[i]);
+            if (constraint == 2)
+            {
+                if (equals != null && equals != remaining[i])
+                    return null; // Can't equal two different things!
+                equals = remaining[i];
+            }
+        }
+        if (equals != null && equals > max)
+            return null; // Can't be equal to something and greater than max
+        double minCoeff = equals ?? 0;
+        double maxCoeff = equals ?? max;
+        pressMeVector[index] = 1;
+        Vector<double>? bestAns = null;
+        for (var coeff = maxCoeff; coeff >= minCoeff; coeff--)
+        {
+            var newVector = button.Multiply(coeff) + currVector;
+            var newUpperbound = upperbound - coeff;
+            var recursiveAns = MinP2SlowHelper(
+                index + 1,
+                newVector,
+                buttonMatrix,
+                constraintMatrix,
+                goal,
+                newUpperbound
+            );
+
+            if (recursiveAns != null)
+            {
+                var pressesWithMe = pressMeVector.Multiply(coeff) + recursiveAns;
+                var numPressesWithMe = pressesWithMe.SumMagnitudes();
+                if (bestAns == null || bestAns.SumMagnitudes() > numPressesWithMe)
+                {
+                    upperbound = Math.Min(numPressesWithMe, upperbound);
+                    bestAns = pressesWithMe;
+                }
+            }
+        }
+
+        return bestAns;
     }
 
     private static int NumPressesNeeded(WiringSchematic schematic)
@@ -39,134 +254,6 @@ class Day10
         }
     }
 
-    private static int? NumPressesNeededP2(WiringSchematic schematic)
-    {
-        var buttons = schematic.Buttons;
-        var start = new JoltageList(schematic.Joltages);
-        var end = new JoltageList(schematic.JoltagesGoal.ConvertAll(val => val / 3));
-        var totalDistance = end.Magnitude();
-        var joltageTotals = new JoltageList(schematic.Joltages);
-        buttons.ForEach(button => joltageTotals = joltageTotals.PushButton(button));
-
-        Func<JoltageList, int> h = (JoltageList from) =>
-        {
-            if (from.Equals(end))
-                return 0;
-            if (from.IsOverjolted(end))
-                return int.MaxValue;
-            var distDone = from.Magnitude();
-            var expectedLocation = new JoltageList(
-                end.Joltages.ConvertAll((val) => val * distDone / totalDistance)
-            );
-            var distLeft = (end - from).Magnitude();
-            var distFromExpected = (expectedLocation - from).Magnitude();
-            if (distDone * 20 > totalDistance * 19)
-            {
-                Console.WriteLine("close");
-                // return distLeft + distFromExpected * 3;
-            }
-            return distLeft + distFromExpected * 10;
-
-            // TODO need two gradients-- one for distance from the end, one for distance from straight line there.
-
-            // var dist = from
-            //     .Joltages.Zip(end.Joltages, joltageTotals.Joltages)
-            //     .Aggregate(
-            //         0,
-            //         (acc, val) =>
-            //         {
-            //             var diff = Math.Abs(val.First - val.Second);
-            //             return acc + diff;
-            //             // var buttonPower = val.Third;
-            //             // var pushesNeeded = diff == 0 ? 0 : diff / buttonPower;
-            //             // return acc + pushesNeeded;
-            //         }
-            //     );
-            // Console.WriteLine($"{from}, {end}, {dist}, {joltageTotals}");
-            // return dist;
-            // return squareDist;
-            // return Math.Sqrt(squareDist);
-        };
-
-        // static string joltageToString(JoltageList joltages) => string.Join(",", joltages);
-        Dictionary<JoltageList, int> gScore = []; // KNOWN CHEAPEST PATH
-        gScore[start] = 0;
-        var openSet = new PriorityQueue<JoltageList, int>();
-        openSet.Enqueue(start, h(start));
-        while (openSet.Count > 0)
-        {
-            var current = openSet.Dequeue();
-            Console.WriteLine($"{current}, {h(current)}, {(end - current).Magnitude()}");
-            if (current == end)
-                return gScore[current];
-            buttons.ForEach(button =>
-            {
-                var neighbor = current.PushButton(button);
-                if (neighbor.IsOverjolted(end))
-                    return;
-                var tentative_gScore = gScore[current] + 1;
-                if (!gScore.ContainsKey(neighbor) || tentative_gScore < gScore[neighbor])
-                {
-                    gScore[neighbor] = tentative_gScore;
-                    openSet.Remove(neighbor, out _, out _);
-                    openSet.Enqueue(neighbor, tentative_gScore + h(neighbor));
-                }
-            });
-        }
-        return -1;
-    }
-
-    // private static int? NumPressesNeededP2(WiringSchematic schematic)
-    // {
-    //     Console.WriteLine(schematic.CalcJoltagesString());
-    //     if (schematic.IsDoneP2())
-    //         return 0;
-    //     if (schematic.IsOverjolted())
-    //         return null;
-    //     for (var i = 0; i < schematic.Buttons.Count; i++)
-    //     {
-    //         var toAdd = schematic.PushButton(i);
-    //         var result = NumPressesNeededP2(toAdd);
-    //         if (result == null)
-    //             continue;
-    //         return result + 1;
-    //     }
-    //     return null;
-    // }
-
-    // private static int NumPressesNeededP2Helper(WiringSchematic schematic) { }
-
-    // private static int NumPressesNeededP2(WiringSchematic schematic)
-    // {
-    //     Console.WriteLine("Doing");
-    //     Dictionary<string, int> minPresses = [];
-    //     HashSet<string> done = [];
-    //     minPresses.Add(schematic.CalcJoltagesString(), 0);
-    //     Queue<WiringSchematic> frontier = [];
-    //     frontier.Enqueue(schematic);
-    //     while (true)
-    //     {
-    //         var next = frontier.Dequeue();
-    //         if (next.IsDoneP2())
-    //             return minPresses[next.CalcJoltagesGoalString()];
-    //         var nextString = next.CalcJoltagesString();
-    //         Console.WriteLine(nextString);
-    //         if (done.Contains(nextString) || next.IsOverjolted())
-    //             continue;
-    //         var nextDist = minPresses[nextString] + 1;
-    //         for (var i = 0; i < schematic.Buttons.Count; i++)
-    //         {
-    //             var toAdd = next.PushButton(i);
-    //             var toAddString = toAdd.CalcJoltagesString();
-    //             if (minPresses.ContainsKey(toAddString))
-    //                 continue;
-    //             frontier.Enqueue(toAdd);
-    //             minPresses[toAdd.CalcJoltagesString()] = nextDist;
-    //         }
-    //         done.Add(nextString);
-    //     }
-    // }
-
     private static WiringSchematic StringToSchematic(string input)
     {
         input = input.Replace("] (", "]|(");
@@ -178,153 +265,94 @@ class Day10
         input = input.Replace("{", "");
         input = input.Replace("}", "");
         var toks = input.Split("|");
-        List<bool> lightsGoal = toks[0].ToList().ConvertAll(c => c == '#');
-        List<List<int>> buttons = toks[1]
+        Vector<double> lightsGoal = CreateVector.Dense<double>([
+            .. toks[0].ToList().ConvertAll(c => c == '#' ? 1.0 : 0.0),
+        ]);
+        List<Vector<double>> buttons = toks[1]
             .Split(' ')
             .ToList()
             .ConvertAll(buttonString =>
             {
-                return buttonString.Split(',').ToList().ConvertAll(int.Parse);
+                var buttonVec = lightsGoal.Multiply(0);
+                buttonString
+                    .Split(',')
+                    .ToList()
+                    .ConvertAll(int.Parse)
+                    .ForEach(index => buttonVec[index] = 1);
+                return buttonVec;
             });
-        List<int> joltagesGoal = toks[2].Split(',').ToList().ConvertAll(int.Parse);
-        List<bool> lights = lightsGoal.ConvertAll(_ => false);
-        List<int> joltages = joltagesGoal.ConvertAll(_ => 0);
-        return new WiringSchematic(lights, lightsGoal, buttons, joltages, joltagesGoal);
-    }
-}
-
-readonly struct JoltageList
-{
-    public JoltageList(List<int> joltages)
-    {
-        Joltages = [.. joltages];
-    }
-
-    public List<int> Joltages { get; }
-
-    public override string ToString()
-    {
-        return $"JoltageList({string.Join(",", Joltages)})";
-    }
-
-    public override int GetHashCode()
-    {
-        var code = new HashCode();
-        Joltages.ForEach(joltage => code.Add(joltage));
-        return code.ToHashCode();
-    }
-
-    public JoltageList PushButton(List<int> button)
-    {
-        List<int> newJoltages = [.. Joltages];
-        button.ForEach(index => newJoltages[index] = newJoltages[index] + 1);
-        return new JoltageList(newJoltages);
-    }
-
-    public int Magnitude()
-    {
-        return Joltages.ConvertAll(Math.Abs).Sum();
-    }
-
-    public bool IsOverjolted(JoltageList goal)
-    {
-        for (var i = 0; i < Joltages.Count; i++)
-        {
-            if (Joltages[i] > goal.Joltages[i])
-                return true;
-        }
-        return false;
-    }
-
-    public static bool operator ==(JoltageList l1, JoltageList l2)
-    {
-        return l1.Joltages.Zip(l2.Joltages).All(pair => pair.First == pair.Second);
-    }
-
-    public static bool operator !=(JoltageList l1, JoltageList l2)
-    {
-        return !(l1 == l2);
-    }
-
-    public static JoltageList operator +(JoltageList l1, JoltageList l2)
-    {
-        return new JoltageList(
-            l1.Joltages.Zip(l2.Joltages).ToList().ConvertAll((val) => val.First + val.Second)
+        Vector<double> joltagesGoal = CreateVector.Dense<double>([
+            .. toks[2].Split(',').ToList().ConvertAll(double.Parse),
+        ]);
+        Vector<double> lights = lightsGoal.Multiply(0);
+        Vector<double> joltages = joltagesGoal.Multiply(0);
+        return new WiringSchematic(
+            lights,
+            lightsGoal,
+            buttons,
+            joltages,
+            joltagesGoal,
+            CreateVector.Dense<double>([.. buttons.ConvertAll(btn => 0)])
         );
-    }
-
-    public static JoltageList operator -(JoltageList l)
-    {
-        return new JoltageList(l.Joltages.ConvertAll(val => -val));
-    }
-
-    public static JoltageList operator -(JoltageList l1, JoltageList l2)
-    {
-        return l1 + -l2;
     }
 }
 
 readonly struct WiringSchematic
 {
     public WiringSchematic(
-        List<bool> lights,
-        List<bool> lightsGoal,
-        List<List<int>> buttons,
-        List<int> joltages,
-        List<int> joltagesGoal
+        Vector<double> lights,
+        Vector<double> lightsGoal,
+        List<Vector<double>> buttons,
+        Vector<double> joltages,
+        Vector<double> joltagesGoal,
+        Vector<double> buttonPushes
     )
     {
         Lights = lights;
         LightsGoal = lightsGoal;
-        buttons.Sort((b1, b2) => b2.Count - b1.Count);
+        buttons.Sort((b1, b2) => Convert.ToInt32(b2.Sum() - b1.Sum())); // Bigger buttons better to use first
         Buttons = buttons;
         Joltages = joltages;
         JoltagesGoal = joltagesGoal;
+        ButtonPushes = buttonPushes;
     }
 
-    public List<bool> Lights { get; }
-    public List<bool> LightsGoal { get; }
-    public List<List<int>> Buttons { get; }
-    public List<int> Joltages { get; }
-    public List<int> JoltagesGoal { get; }
+    public Vector<double> Lights { get; }
+    public Vector<double> LightsGoal { get; }
+    public List<Vector<double>> Buttons { get; }
+    public Vector<double> Joltages { get; }
+    public Vector<double> JoltagesGoal { get; }
+    public Vector<double> ButtonPushes { get; }
 
     public bool IsDoneP1()
     {
-        for (var i = 0; i < Lights.Count; i++)
-        {
-            if (Lights[i] != LightsGoal[i])
-                return false;
-        }
-        return true;
+        return Lights.Modulus(2).Equals(LightsGoal.Modulus(2));
     }
 
     public bool IsDoneP2()
     {
-        for (var i = 0; i < Joltages.Count; i++)
-        {
-            if (Joltages[i] != JoltagesGoal[i])
-                return false;
-        }
-        return true;
+        return Joltages.Equals(JoltagesGoal);
     }
 
     public bool IsOverjolted()
     {
-        for (var i = 0; i < Joltages.Count; i++)
-        {
-            if (Joltages[i] > JoltagesGoal[i])
-                return true;
-        }
-        return false;
+        return (JoltagesGoal - Joltages).Minimum() < 0;
     }
 
     public WiringSchematic PushButton(int buttonIndex)
     {
-        List<bool> newLights = [.. Lights];
-        Buttons[buttonIndex].ForEach(index => newLights[index] = !newLights[index]);
-        List<int> newJoltages = [.. Joltages];
-        Buttons[buttonIndex].ForEach(index => newJoltages[index] = newJoltages[index] + 1);
-        return new WiringSchematic(newLights, LightsGoal, Buttons, newJoltages, JoltagesGoal);
+        var newLights = Lights.Add(Buttons[buttonIndex]);
+        var newJoltages = Joltages.Add(Buttons[buttonIndex]);
+        var newButtonPushes = ButtonPushes.Clone();
+        newButtonPushes[buttonIndex]++;
+        return new WiringSchematic(
+            newLights,
+            LightsGoal,
+            Buttons,
+            newJoltages,
+            JoltagesGoal,
+            newButtonPushes
+        );
     }
 
     public string CalcLightsString()
@@ -337,9 +365,12 @@ readonly struct WiringSchematic
         return CalcAnyLightsString(LightsGoal);
     }
 
-    private static string CalcAnyLightsString(List<bool> lights)
+    private static string CalcAnyLightsString(Vector<double> lights)
     {
-        return string.Join("", lights.ConvertAll(light => light ? '#' : '.'));
+        return string.Join(
+            "",
+            Array.ConvertAll(lights.AsArray(), light => light % 2 == 1 ? '#' : '.')
+        );
     }
 
     public string CalcJoltagesString()
@@ -352,15 +383,18 @@ readonly struct WiringSchematic
         return CalcAnyJoltagesString(JoltagesGoal);
     }
 
-    private static string CalcAnyJoltagesString(List<int> joltages)
+    private static string CalcAnyJoltagesString(Vector<double> joltages)
     {
         return string.Join(",", joltages);
     }
 
     public override string ToString()
     {
-        Func<List<bool>, string> calcLights = lights =>
-            string.Join("", lights.ConvertAll(light => light ? '#' : '.'));
+        Func<Vector<double>, string> calcLights = lights =>
+            string.Join(
+                "",
+                Array.ConvertAll(lights.AsArray(), light => light % 2 == 1 ? '#' : '.')
+            );
         return $"WiringSchematic current lights: {calcLights(Lights)}, goal lights: {calcLights(LightsGoal)}, buttons: {string.Join(" ", Buttons.ConvertAll(button => "(" + string.Join(",", button) + ")"))}, joltages: {{{string.Join(",", Joltages)}}}";
     }
 }
