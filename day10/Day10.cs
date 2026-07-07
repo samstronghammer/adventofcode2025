@@ -24,7 +24,6 @@ class Day10
         // Map from curr location mod 2 to (cost, vec to add)
         Dictionary<Vector<double>, List<(double, Vector<double>)>> optionsMemo = [];
         var result = P2FastHelper(buttonMatrix, schematic.JoltagesGoal, optionsMemo);
-        // Console.WriteLine($"goal: {string.Join(',', schematic.JoltagesGoal)}, result: {result}, optionsSize: {optionsMemo.Count}, goalMemoSize: {goalMemo.Count}");
         return result;
     }
 
